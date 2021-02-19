@@ -1,4 +1,4 @@
-  /**
+/**
  * Entry point of server. 
  */
 require('dotenv').config();
@@ -10,10 +10,12 @@ const routes = require('./api/router');
 
 const app = express();
 // middleware
-app.use(bodyParser.json());
+app.use(bodyParser.raw({
+  type: 'text/plain'
+}));
 
 app.get('/ping', (_, res) => res.send('PONG'));
 app.use(routes);
 
-const port = 8080;
+const port = process.env.RELAY_SERVER_PORT;
 app.listen(port, () => console.log(`App listening on port ${port}...`));
