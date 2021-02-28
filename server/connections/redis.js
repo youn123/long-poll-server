@@ -9,12 +9,18 @@ const client = redis.createClient(6380, process.env.REDIS_HOST_NAME, {
 });
 
 function newRedisClient() {
-  return redis.createClient(6380, process.env.REDIS_HOST_NAME, {
+  let client = redis.createClient(6380, process.env.REDIS_HOST_NAME, {
     auth_pass: process.env.REDIS_CACHE_KEY,
     tls: {
       servername: process.env.REDIS_HOST_NAME
     }
   });
+
+  client.on('error', function(err) {
+    console.log(err);
+  });
+
+  return client;
 }
 
 client.getAsync = promisify(client.get);
@@ -27,5 +33,9 @@ client.incrAsync = promisify(client.incr);
 client.llenAsync = promisify(client.llen);
 client.lrangeAsync = promisify(client.lrange);
 client.rpushAsync = promisify(client.rpush);
+
+client.on('error', function(err) {
+  console.log(err);
+});
 
 module.exports = {redisClient: client, newRedisClient};

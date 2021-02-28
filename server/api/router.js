@@ -14,22 +14,24 @@ subscriber.on('message', (channel, _) => {
   if (waiting.has(channel)) {
     let resolves = waiting.get(channel);
 
-    for (let i = resolves.length - 1; i >= 0; i--) {
-      console.log('New message arrived');
-      resolves[i]();
+    for (let resolve of resolves) {
+      console.log(`New message arrived to channel ${channel}, alerting ${resolves.length} clients...`);
+      resolve();
     }
-
-    waiting.set(channel, []);
   }
 });
 
 router.get('/lobbies/new', async function(req, res) {
+  console.log('GET /lobbies/new');
+
   let lobbyId = await redisClient.spopAsync('availableLobbyIds');
 
   if (lobbyId) {
     // Set up rooms
-    console.log(`Creating lobby with id: ${lobbyId}`);
+    console.log(`  Creating lobby with id: ${lobbyId}`);
     let clientId = await redisClient.incrAsync(`lobbies/${lobbyId}/num-members`);
+
+    console.log(`  Lobby ${lobbyId} claimed.`);
 
     res.status(200).json({
       lobby_id: lobbyId,
@@ -42,9 +44,9 @@ router.get('/lobbies/new', async function(req, res) {
 });
 
 router.get('/lobbies/:id/join', async function(req, res) {
-  console.log('/lobbies/:id/join');
-
   let lobbyId = req.params.id;
+
+  console.log(`GET /lobbies/${lobbyId}/join`);
 
   if (await redisClient.existsAsync(`lobbies/${lobbyId}/num-members`)) {
     let clientId = await redisClient.incrAsync(`lobbies/${lobbyId}/num-members`);
@@ -54,8 +56,10 @@ router.get('/lobbies/:id/join', async function(req, res) {
         status: 'MaxMembersReached'
       });
     } else {
+      console.log (`  ${clientId} successfully joined ${lobbyId}.`);
+
       res.status(200).json({
-        status: 'Accept',
+        status: 'Ok',
         client_id: clientId
       });
     }
@@ -65,15 +69,16 @@ router.get('/lobbies/:id/join', async function(req, res) {
 router.get('/lobbies/:id/:num_received', async function(req, res) {
   async function getNewMessages(lobbyId, numMessagesReceived) {
     let messagesLength = await redisClient.llenAsync(`lobbies/${lobbyId}/messages`);
-    console.log(`Fetching messages from ${numMessagesReceived}, message length: ${messagesLength}`);
-    return await redisClient.lrangeAsync(`lobbies/${lobbyId}/messages`, numMessagesReceived, messagesLength - 1);
+    let messages = await redisClient.lrangeAsync(`lobbies/${lobbyId}/messages`, numMessagesReceived, messagesLength - 1);
+
+    return messages ? messages : [];
   }
 
   let wait = req.get('prefer');
   let lobbyId = req.params['id'];
   let numMessagesReceived = parseInt(req.params['num_received']);
 
-  console.log(`/lobbies/:id/num_received ${numMessagesReceived}`);
+  console.log(`GET /lobbies/${lobbyId}/${numMessagesReceived}`);
 
   let newMessages = await getNewMessages(lobbyId, numMessagesReceived);
 
@@ -126,16 +131,17 @@ router.get('/lobbies/:id/:num_received', async function(req, res) {
 
     await waitOrGetMessages;
     newMessages = await getNewMessages(lobbyId, numMessagesReceived);
+    console.log(`  Waited ${wait} ms`);
   }
 
-  console.log('Sending new messages:', newMessages[0]);
+  console.log(`  Sending ${newMessages.length} new messages`);
   res.status(200).json({messages: newMessages});
 });
 
 router.post('/lobbies/:id/send', async function(req, res) {
-  console.log('/lobbies/:id/send');
-
   let lobbyId = req.params['id'];
+
+  console.log(`POST /lobbies/${lobbyId}/send`);
 
   await redisClient.rpushAsync(`lobbies/${lobbyId}/messages`, req.body);
   redisClient.publish(`lobbies/${lobbyId}/alerts`, 'New message');
