@@ -1,6 +1,9 @@
 const { redisClient} = require('../connections/redis');
+const { getFriendlyAge } = require('../../shared/utils');
 
 const chars = '1234567890QWERTYUIOPASDFGHJKLZXCVBNM';
+// 6 hours
+const LOBBY_CLAIM_TIME = parseInt(process.env.LOBBY_CLAIM_TIME);
 
 function populateAvailableLobbyIds(numIds) {
   let multi = redisClient.multi();
@@ -23,12 +26,45 @@ function populateAvailableLobbyIds(numIds) {
 
     multi.exec(function(err, _) {
       if (err) reject(err);
-      redisClient.quit();
+      resolve();
+    });
+  });
+}
+
+async function cleanOldLobbies() {
+  console.log('cleanOldLobbies task started.');
+
+  let numLobbiesCleaned = 0;
+  let multi = redisClient.multi();
+
+  return new Promise(async function(resolve, reject) {
+    let allClaimedLobbies = await redisClient.smembersAsync('claimedLobbyIds');
+
+    for (let lobbyId of allClaimedLobbies) {
+      let now = Date.now();
+      let birthTime = await redisClient.getAsync(`lobbies/${lobbyId}/birth-time`);
+      let age = now - birthTime;
+  
+      console.log(`  ${lobbyId} is ${getFriendlyAge(birthTime)} old.`)
+  
+      if (age > LOBBY_CLAIM_TIME) {
+        multi.del(`lobbies/${lobbyId}*`);
+        multi.sadd('availableLobbyIds', lobbyId);
+  
+        numLobbiesCleaned++;
+      }
+    }
+  
+    multi.exec(function(err, _) {
+      if (err) reject(err);
+  
+      console.log(`Cleaned ${numLobbiesCleaned} lobbies.`);
       resolve();
     });
   });
 }
 
 module.exports = {
-  populateAvailableLobbyIds
+  populateAvailableLobbyIds,
+  cleanOldLobbies
 };

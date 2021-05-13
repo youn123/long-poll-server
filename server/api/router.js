@@ -3,8 +3,9 @@ const express = require('express');
 const { redisClient, newRedisClient } = require('../connections/redis.js');
 const { sleep } = require('../../shared/utils');
 
-const MAX_MEMBERS_PER_LOBBY = 20;
 const router = express.Router();
+
+const MAX_MEMBERS_PER_LOBBY = parseInt(process.env.MAX_MEMBERS_PER_LOBBY);
 
 let waiting = new Map();
 let unsubscribeTimeouts = new Map();
@@ -30,6 +31,10 @@ router.get('/lobbies/new', async function(req, res) {
     // Set up rooms
     console.log(`  Creating lobby with id: ${lobbyId}`);
     let clientId = await redisClient.incrAsync(`lobbies/${lobbyId}/num-members`);
+
+    let lobbyBirthTime = Date.now();
+    await redisClient.setAsync(`lobbies/${lobbyId}/birth-time`, lobbyBirthTime);
+    await redisClient.saddAsync('claimedLobbyIds', lobbyId);
 
     console.log(`  Lobby ${lobbyId} claimed.`);
 
@@ -63,6 +68,11 @@ router.get('/lobbies/:id/join', async function(req, res) {
         client_id: clientId
       });
     }
+  } else {
+    res.status(200).json({
+      status: 'Failed',
+      message: 'Lobby does not exist'
+    });
   }
 });
 
@@ -79,6 +89,12 @@ router.get('/lobbies/:id/:num_received', async function(req, res) {
   let numMessagesReceived = parseInt(req.params['num_received']);
 
   console.log(`GET /lobbies/${lobbyId}/${numMessagesReceived}`);
+
+  if (!await redisClient.sismemberAsync('claimedLobbyIds', lobbyId)) {
+    res.sendStatus(500);
+
+    return;
+  }
 
   let newMessages = await getNewMessages(lobbyId, numMessagesReceived);
 
@@ -111,7 +127,7 @@ router.get('/lobbies/:id/:num_received', async function(req, res) {
     let tokens = wait.split('=');
     let waitMilliseconds = parseInt(tokens[1]);
 
-    // Technically, this leads to a race condition where a publish
+    // This leads to a race condition where a publish
     // event happens between the time window when redis was last queried
     // and when the resolve function is added to waiting, but I think the worst thing that happens
     // is that the request waits for waitMilliseconds ms before being responded to.
@@ -143,8 +159,31 @@ router.post('/lobbies/:id/send', async function(req, res) {
 
   console.log(`POST /lobbies/${lobbyId}/send`);
 
+  if (!await redisClient.sismemberAsync('claimedLobbyIds', lobbyId)) {
+    res.sendStatus(500);
+
+    return;
+  }
+
   await redisClient.rpushAsync(`lobbies/${lobbyId}/messages`, req.body);
   redisClient.publish(`lobbies/${lobbyId}/alerts`, 'New message');
+
+  res.sendStatus(200);
+});
+
+// Voting
+router.post('/draft-app/event', async function(req, res) {
+  let event = JSON.parse(req.body);
+
+  if (event.name == 'Opened') {
+    await redisClient.incrAsync('draft-app/event/Opened');
+  } else if (event.name == 'NotInterested') {
+    await redisClient.incrAsync('draft-app/event/NotInterested');
+  } else if (event.name == 'Interested') {
+    await redisClient.incrAsync('draft-app/event/Interested');
+  } else if (event.name == 'JustWhatIWanted') {
+    await redisClient.incrAsync('draft-app/event/JustWhatIWanted');
+  }
 
   res.sendStatus(200);
 });

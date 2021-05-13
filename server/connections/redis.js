@@ -33,6 +33,8 @@ client.incrAsync = promisify(client.incr);
 client.llenAsync = promisify(client.llen);
 client.lrangeAsync = promisify(client.lrange);
 client.rpushAsync = promisify(client.rpush);
+client.smembersAsync = promisify(client.smembers);
+client.sismemberAsync = promisify(client.sismember);
 
 client.on('error', function(err) {
   console.log(err);

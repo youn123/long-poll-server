@@ -1,0 +1,8 @@
+{
+    "appService.zipIgnorePattern": [
+        "node_modules{,/**}",
+        ".vscode{,/**}"
+    ],
+    "appService.defaultWebAppToDeploy": "/subscriptions/eb635657-ab74-4b61-8f8e-d3b3218d8be2/resourceGroups/fbivscartel/providers/Microsoft.Web/sites/rootofevil",
+    "appService.deploySubpath": "."
+}
